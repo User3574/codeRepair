@@ -19,7 +19,7 @@ class Dataset(torch.utils.data.Dataset):
         return len(self.buggy["input_ids"])
 
 
-def replace_unknown(labels):
+def replace_unknown_labels(labels):
     fixes = []
     for tokenized in labels:
         fixed = [token if token != 0 else -100 for token in tokenized]
@@ -27,7 +27,7 @@ def replace_unknown(labels):
     return fixes
 
 
-def create_tokenized_dataset(tokenizer, prefix, dataset, max_length):
+def create_tokenized_dataset(tokenizer, prefix, dataset, max_length, replace_unknown):
     buggy = dataset['buggy']
     fixed = dataset['fixed']
 
@@ -45,7 +45,15 @@ def create_tokenized_dataset(tokenizer, prefix, dataset, max_length):
     fixed = tokenizer(fixed, max_length=max_length, padding="max_length", truncation=True, return_tensors="pt")
 
     # Replace the index of the padding tokens by -100 (CrossEntropyLoss impact)
-    # buggy['input_ids'] = replace_unknown(buggy['input_ids'])
-    # fixed['input_ids'] = replace_unknown(fixed['input_ids'])
+    if replace_unknown is True:
+        buggy['input_ids'] = replace_unknown_labels(buggy['input_ids'])
+        fixed['input_ids'] = replace_unknown_labels(fixed['input_ids'])
 
     return Dataset(buggy, fixed)
+
+def preprocess_logits_for_metrics(logits, labels):
+    if isinstance(logits, tuple):
+        # Depending on the model and config, logits may contain extra tensors,
+        # like past_key_values, but logits always come first
+        logits = logits[0]
+    return logits.argmax(dim=-1)
