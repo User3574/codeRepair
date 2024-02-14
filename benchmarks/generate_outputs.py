@@ -29,14 +29,13 @@ if __name__ == '__main__':
 
     print(f"Running {benchmark_name} Benchmark")
     for model_name in model_names:
-        # TODO: Use all models
         if model_name == "codegen":
             model = CodeGen(JAVA_DIR, BENCH_DIR)
-            checkpoint_names = ["Salesforce/codegen-350M-multi"]#["Salesforce/codegen-350M-multi", "Salesforce/codegen-2B-multi", "Salesforce/codegen-6B-multi"]
+            checkpoint_names = ["Salesforce/codegen-350M-multi", "Salesforce/codegen-2B-multi", "Salesforce/codegen-6B-multi"]
             config = CodeGenInputConfig
         elif model_name == "codet5p":
             model = CodeT5(JAVA_DIR, BENCH_DIR)
-            checkpoint_names = ["Salesforce/codet5p-220m", "Salesforce/codet5p-2b"] #["Salesforce/codet5-small", "Salesforce/codet5-base", "Salesforce/codet5-large"] , "Salesforce/codet5p-6b"]
+            checkpoint_names = ["Salesforce/codet5-small", "Salesforce/codet5-base", "Salesforce/codet5-large"]
             config = CodeT5InputConfig
         elif model_name == "starcoder":
             model = StarCoder(JAVA_DIR, BENCH_DIR)
@@ -44,11 +43,11 @@ if __name__ == '__main__':
             config = StarCoderInputConfig
         elif model_name == "deepseekcoder":
             model = DeepSeekCoder(JAVA_DIR, BENCH_DIR)
-            checkpoint_names = ["deepseek-ai/deepseek-coder-6.7b-base"]#["deepseek-ai/deepseek-coder-1.3b-base", "deepseek-ai/deepseek-coder-6.7b-base"]
+            checkpoint_names = ["deepseek-ai/deepseek-coder-1.3b-base", "deepseek-ai/deepseek-coder-6.7b-base"]
             config = DeepSeekCoderInputConfig
         elif model_name == "bloom":
             model = Bloom(JAVA_DIR, BENCH_DIR)
-            checkpoint_names = ["bigscience/bloom-7b1"] #["bigscience/bloom-560m", "bigscience/bloom-1b7", "bigscience/bloom-7b1"]
+            checkpoint_names = ["bigscience/bloom-560m", "bigscience/bloom-1b7", "bigscience/bloom-7b1"]
             config = BloomInputConfig
         elif model_name == "codellama":
             model = CodeLlama(JAVA_DIR, BENCH_DIR)

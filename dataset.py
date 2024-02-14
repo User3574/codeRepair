@@ -14,18 +14,16 @@ from tqdm import tqdm
 
 
 class CLMDataset(torch.utils.data.Dataset):
-    def __init__(self, file_path, tokenizer, max_length=768, shuffle=False, load_range=None, include_buggy_line=True):
+    def __init__(self, file_path, tokenizer, model_class, max_length=768, shuffle=False, load_range=None, include_buggy_line=True):
         self.data = []
         self.max_length = max_length
 
         fp = codecs.open(file_path, 'r', 'utf-8')
         for l in tqdm(fp.readlines()):
             l = eval(l)
-            inputs = l['buggy function before']
-            if include_buggy_line:
-                inputs += l['buggy line']
-            inputs += '<extra_id_0>' + l['buggy function after']
-            outputs = l['fixed line'] + tokenizer.eos_token
+
+            # prepare_input(self, fn_before, fn_bug, fn_fix, fn_after, eos_token)
+            inputs, outputs = model_class.prepare_input(l['buggy function before'], l['buggy line'], l['fixed line'], l['buggy function after'], tokenizer.eos_token)
 
             inputs = tokenizer.encode(inputs, return_tensors='pt')
             outputs = tokenizer.encode(outputs, return_tensors='pt')

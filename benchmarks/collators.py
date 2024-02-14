@@ -1,6 +1,6 @@
 import torch
 
-def data_collator(batch):
+def seq2seq_collator(batch):
     batch_data = {'input_ids': [], 'labels': [], 'attention_mask': []}
     max_input_len = max([b['input_ids'].size(1) for b in batch])
     max_output_len = max([b['labels'].size(1) for b in batch])

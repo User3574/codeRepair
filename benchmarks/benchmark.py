@@ -43,7 +43,9 @@ class HumanEval(Benchmark):
         FNULL = open(os.devnull, 'w')
         try:
             os.chdir(dir)
-            out, err = self.command_with_timeout(["mvn", "test", "-Dtest=TEST_" + algo.upper()], timeout=10)
+            time.sleep(3)
+            out, err = self.command_with_timeout(["mvn", "test", "-Dtest=TEST_" + algo.upper()], timeout=20)
+            time.sleep(3)
             os.chdir(CUR_DIR)
             msg = (str(out) + str(err)).upper()
             if "compilation problems".upper() in msg or "compilation failure".upper() in msg:
@@ -164,7 +166,7 @@ class HumanEval(Benchmark):
             json.dump(validated_result, open(output_file, 'w'), indent=2)
 
         # Remove temporary directory
-        shutil.rmtree(self.tmp_dir)
+        # shutil.rmtree(self.tmp_dir)
 
 
 class QuixBugs(Benchmark):
@@ -211,7 +213,7 @@ class QuixBugs(Benchmark):
             time.sleep(3)
             out, err = self.command_with_timeout(
                 ["java", "-cp", ".:java_programs:" + JAR_DIR + "junit4-4.12.jar:" + JAR_DIR + "hamcrest-all-1.3.jar",
-                 "org.junit.runner.JUnitCore", "java_testcases.junit." + algo.upper() + "_TEST"], timeout=5
+                 "org.junit.runner.JUnitCore", "java_testcases.junit." + algo.upper() + "_TEST"], timeout=10
             )
             print(out, err)
             os.chdir(CUR_DIR)
@@ -334,9 +336,11 @@ class Defects4j(Benchmark):
         self.defects4j_dir = defects4j_dir
         self.tmp_counter = 0
         self.tmp_root = tmp_dir[:-1]
+        print(f'Root: {self.tmp_root}')
         self.tmp_dir = f"{self.tmp_root}/{self.tmp_counter}/"
         # Create dir
         pathlib.Path(self.tmp_root).mkdir(parents=True, exist_ok=True)
+        # pathlib.Path(self.tmp_dir).mkdir(parents=True, exist_ok=True)
 
     def create_tmp_folder(self, tmp_dir):
         tmp_dir = f"{self.tmp_root}/{self.tmp_counter}/"
@@ -408,10 +412,6 @@ class Defects4j(Benchmark):
 
     def validate(self, input_file, output_file):
         plausible, total = 0, 0
-
-        # if not os.path.exists(self.tmp_dir):
-        #   self.command_with_timeout(['mkdir', self.tmp_dir])
-
         model_output = json.load(open(input_file, 'r'))
         validated_result = {'config': model_output['config'], 'data': {}}
         # validated_result = json.load(open(output_file, 'r'))
@@ -585,4 +585,4 @@ class Defects4j(Benchmark):
         json.dump(validated_result, open(output_file, 'w'), indent=2)
 
         # Remove temporary directory
-        shutil.rmtree(self.tmp_root, ignore_errors=True)
+        # shutil.rmtree(self.tmp_root, ignore_errors=True)

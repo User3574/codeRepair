@@ -11,10 +11,6 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, RobertaTokenizer, 
 
 access_token = "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"
 
-# Models dictionary
-models_classes = {}
-models_classes['codet5'] = {'tokenizer': AutoTokenizer, 'model': AutoModelForSeq2SeqLM}
-
 
 class Model:
     def __init__(self):
@@ -217,6 +213,11 @@ class CodeGen(Model):
         except Exception as e:
             return ''
 
+    @staticmethod
+    def prepare_input(fn_before, fn_bug, fn_fix, fn_after, eos_token):
+        inputs = fn_before + fn_after
+        outputs = fn_fix + tokenizer.eos_token
+
 CodeT5InputConfig = {
     "CODET5_BASE_CODEFORM_MASKFORM_NOCOMMENT": {
         "model_id": "codet5-small/base/large",
@@ -251,10 +252,27 @@ class CodeT5(Model):
             filename, start, end, config, tmp_file
         ])
 
-    # TODO: Finish
-    def prepare_input(self, fn_before, fn_fix, fn_after):
-        inputs = fn_before + '<extra_id_0>' + fn_after
-        outputs = fn_fix + tokenizer.eos_token
+    @staticmethod
+    def prepare_input(fn_before, fn_bug, fn_fix, fn_after, eos_token):
+        inputs = fn_before
+        if fn_bug is not None:
+            # Replace all lines with buggy line format
+            fn_bug = fn_bug.replace("\n", "\n// buggy line:")
+
+            # Remove last buggy line (For empty line)
+            if fn_bug.endswith('// buggy line:'):
+                fn_bug = fn_bug[:-len(str('// buggy line:'))]
+
+            # If buggy line is not already included
+            if not fn_bug.startswith('\n// buggy line:'):
+                inputs += '// buggy line: '
+
+            # Add buggy part and special token
+            inputs += fn_bug + "<extra_id_0>"
+        inputs += fn_after
+        outputs = fn_fix + eos_token
+        print(inputs, outputs)
+        return inputs, outputs
 
     def get_input(self, config, output_file, bench_dir):
         if "humaneval" in bench_dir:
@@ -573,6 +591,12 @@ class StarCoder(Model):
     def output_to_patch(output, config):
         return output.strip()
 
+    @staticmethod
+    def prepare_input(fn_before, fn_bug, fn_fix, fn_after, eos_token):
+        inputs = fn_before + '<FILL_ME>' + fn_after
+        outputs = fn_fix + tokenizer.eos_token
+
+
 DeepSeekCoderInputConfig = {
     "DEEPSEEKCODER_COMPLETE_CODEFORM_NOCOMMENT": {
         "model_id": "deepseekcoder-base-1.3B/6.7B",
@@ -741,6 +765,11 @@ class DeepSeekCoder(Model):
     @staticmethod
     def output_to_patch(output, config):
         return output.strip()
+
+    @staticmethod
+    def prepare_input(fn_before, fn_bug, fn_fix, fn_after, eos_token):
+        inputs = fn_before + '<FILL_ME>' + fn_after
+        outputs = fn_fix + tokenizer.eos_token
 
 
 BloomInputConfig = {
@@ -934,6 +963,11 @@ class Bloom(Model):
         except Exception as e:
             return ''
 
+    @staticmethod
+    def prepare_input(fn_before, fn_bug, fn_fix, fn_after, eos_token):
+        inputs = fn_before + '<FILL_ME>' + fn_after
+        outputs = fn_fix + tokenizer.eos_token
+
 
 CodeLlamaInputConfig = {
     "CODELLAMA_COMPLETE_CODEFORM_NOCOMMENT": {
@@ -1103,3 +1137,23 @@ class CodeLlama(Model):
     @staticmethod
     def output_to_patch(output, config):
         return output.strip()
+
+    @staticmethod
+    def prepare_input(fn_before, fn_bug, fn_fix, fn_after, eos_token):
+        inputs = fn_before + '<FILL_ME>' + fn_after
+        outputs = fn_fix + tokenizer.eos_token
+
+
+# Models dictionary
+models_classes = {}
+models_classes['codet5p'] = {'model': CodeT5}
+models_classes['codegen'] = {'model': CodeGen}
+models_classes['starcoder'] = {'model': StarCoder}
+models_classes['deepseekcoder'] = {'model': DeepSeekCoder}
+models_classes['bloom'] = {'model': Bloom}
+models_classes['codellama'] = {'model': CodeLlama}
+
+# Training dictionary
+training_classes = {}
+training_classes['codet5p'] = {'tokenizer': AutoTokenizer, 'model': AutoModelForSeq2SeqLM}
+training_classes['codellama'] = {'tokenizer': AutoTokenizer, 'model': AutoModelForCausalLM}
