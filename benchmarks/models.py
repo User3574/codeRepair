@@ -62,7 +62,7 @@ class CodeGen(Model):
                 filename, rem_loc = line.strip().split()
                 start, end = rem_loc.split('-')
                 end = str(int(end) - 1) if end != start else end
-                tmp_file = self.BENCH_DIR + 'tmp/humaneval/proj/tmp_codegen.json'
+                tmp_file = self.BENCH_DIR + 'tmp/humaneval-java/proj/tmp_codegen.json'
                 self.get_parsed_input(
                     bench_dir + 'src/main/java/humaneval/buggy/' + filename + '.java',
                     start,
@@ -215,8 +215,25 @@ class CodeGen(Model):
 
     @staticmethod
     def prepare_input(fn_before, fn_bug, fn_fix, fn_after, eos_token):
-        inputs = fn_before + fn_after
-        outputs = fn_fix + tokenizer.eos_token
+        inputs = fn_before
+        if fn_bug is not None:
+            # Replace all lines with buggy line format
+            fn_bug = fn_bug.replace("\n", "\n// buggy line:")
+
+            # Remove last buggy line (For empty line)
+            if fn_bug.endswith('// buggy line:'):
+                fn_bug = fn_bug[:-len(str('// buggy line:'))]
+
+            # If buggy line is not already included
+            if not fn_bug.startswith('\n// buggy line:'):
+                inputs += '// buggy line: '
+
+            # Add buggy part and special token
+            inputs += fn_bug + "\n"
+        #inputs += eos_token
+        outputs = fn_fix + fn_after + eos_token
+        return inputs, outputs
+
 
 CodeT5InputConfig = {
     "CODET5_BASE_CODEFORM_MASKFORM_NOCOMMENT": {
@@ -268,10 +285,9 @@ class CodeT5(Model):
                 inputs += '// buggy line: '
 
             # Add buggy part and special token
-            inputs += fn_bug + "<extra_id_0>"
+            inputs += fn_bug + "<extra_id_0>\n"
         inputs += fn_after
         outputs = fn_fix + eos_token
-        print(inputs, outputs)
         return inputs, outputs
 
     def get_input(self, config, output_file, bench_dir):
@@ -283,7 +299,7 @@ class CodeT5(Model):
                 start, end = rem_loc.split('-')
                 end = str(int(end) - 1) if end != start else end
 
-                tmp_file = self.BENCH_DIR + 'tmp/humaneval/proj/tmp_codet5.json'
+                tmp_file = self.BENCH_DIR + 'tmp/humaneval-java/proj/tmp_codet5.json'
                 self.get_parsed_input(
                     bench_dir + 'src/main/java/humaneval/buggy/' + filename + '.java',
                     start,
@@ -463,7 +479,7 @@ class StarCoder(Model):
                 start, end = rem_loc.split('-')
                 end = str(int(end) - 1) if end != start else end
 
-                tmp_file = self.BENCH_DIR + 'tmp/humaneval/proj/tmp_starcoder.json'
+                tmp_file = self.BENCH_DIR + 'tmp/humaneval-java/proj/tmp_starcoder.json'
                 self.get_parsed_input(
                     bench_dir + 'src/main/java/humaneval/buggy/' + filename + '.java',
                     start,
@@ -593,8 +609,24 @@ class StarCoder(Model):
 
     @staticmethod
     def prepare_input(fn_before, fn_bug, fn_fix, fn_after, eos_token):
-        inputs = fn_before + '<FILL_ME>' + fn_after
-        outputs = fn_fix + tokenizer.eos_token
+        inputs = "<fim_prefix>" + fn_before
+        if fn_bug is not None:
+            # Replace all lines with buggy line format
+            fn_bug = fn_bug.replace("\n", "\n// buggy line:")
+
+            # Remove last buggy line (For empty line)
+            if fn_bug.endswith('// buggy line:'):
+                fn_bug = fn_bug[:-len(str('// buggy line:'))]
+
+            # If buggy line is not already included
+            if not fn_bug.startswith('\n// buggy line:'):
+                inputs += '// buggy line: '
+
+            # Add buggy part and special token
+            inputs += fn_bug + "<fim_suffix>\n"
+        inputs += fn_after + "<fim_middle>"
+        outputs = fn_fix + eos_token
+        return inputs, outputs
 
 
 DeepSeekCoderInputConfig = {
@@ -640,7 +672,7 @@ class DeepSeekCoder(Model):
                 start, end = rem_loc.split('-')
                 end = str(int(end) - 1) if end != start else end
 
-                tmp_file = self.BENCH_DIR + 'tmp/humaneval/proj/tmp_deepseekcoder.json'
+                tmp_file = self.BENCH_DIR + 'tmp/humaneval-java/proj/tmp_deepseekcoder.json'
                 self.get_parsed_input(
                     bench_dir + 'src/main/java/humaneval/buggy/' + filename + '.java',
                     start,
@@ -815,7 +847,7 @@ class Bloom(Model):
                 start, end = rem_loc.split('-')
                 end = str(int(end) - 1) if end != start else end
 
-                tmp_file = self.BENCH_DIR + 'tmp/humaneval/proj/tmp_bloom.json'
+                tmp_file = self.BENCH_DIR + 'tmp/humaneval-java/proj/tmp_bloom.json'
                 self.get_parsed_input(
                     bench_dir + 'src/main/java/humaneval/buggy/' + filename + '.java',
                     start,
@@ -1012,7 +1044,7 @@ class CodeLlama(Model):
                 start, end = rem_loc.split('-')
                 end = str(int(end) - 1) if end != start else end
 
-                tmp_file = self.BENCH_DIR + 'tmp/humaneval/proj/tmp_codellama.json'
+                tmp_file = self.BENCH_DIR + 'tmp/humaneval-java/proj/tmp_codellama.json'
                 self.get_parsed_input(
                     bench_dir + 'src/main/java/humaneval/buggy/' + filename + '.java',
                     start,
@@ -1140,8 +1172,24 @@ class CodeLlama(Model):
 
     @staticmethod
     def prepare_input(fn_before, fn_bug, fn_fix, fn_after, eos_token):
-        inputs = fn_before + '<FILL_ME>' + fn_after
-        outputs = fn_fix + tokenizer.eos_token
+        inputs = fn_before
+        if fn_bug is not None:
+            # Replace all lines with buggy line format
+            fn_bug = fn_bug.replace("\n", "\n// buggy line:")
+
+            # Remove last buggy line (For empty line)
+            if fn_bug.endswith('// buggy line:'):
+                fn_bug = fn_bug[:-len(str('// buggy line:'))]
+
+            # If buggy line is not already included
+            if not fn_bug.startswith('\n// buggy line:'):
+                inputs += '// buggy line: '
+
+            # Add buggy part and special token
+            inputs += fn_bug + "<FILL_ME>\n"
+        inputs += fn_after
+        outputs = fn_fix + "▁<EOT>"
+        return inputs, outputs
 
 
 # Models dictionary
@@ -1156,4 +1204,8 @@ models_classes['codellama'] = {'model': CodeLlama}
 # Training dictionary
 training_classes = {}
 training_classes['codet5p'] = {'tokenizer': AutoTokenizer, 'model': AutoModelForSeq2SeqLM}
+training_classes['codegen'] = {'tokenizer': AutoTokenizer, 'model': AutoModelForCausalLM}
+training_classes['starcoder'] = {'tokenizer': AutoTokenizer, 'model': AutoModelForCausalLM}
+training_classes['deepseekcoder'] = {'tokenizer': AutoTokenizer, 'model': AutoModelForCausalLM}
+training_classes['bloom'] = {'tokenizer': AutoTokenizer, 'model': AutoModelForCausalLM}
 training_classes['codellama'] = {'tokenizer': AutoTokenizer, 'model': AutoModelForCausalLM}

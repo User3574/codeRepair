@@ -31,7 +31,7 @@ if __name__ == '__main__':
     for model_name in model_names:
         if model_name == "codegen":
             model = CodeGen(JAVA_DIR, BENCH_DIR)
-            checkpoint_names = ["Salesforce/codegen-350M-multi", "Salesforce/codegen-2B-multi", "Salesforce/codegen-6B-multi"]
+            checkpoint_names = ["Salesforce/codegen-6B-multi"]#["Salesforce/codegen-350M-multi", "Salesforce/codegen-2B-multi", "Salesforce/codegen-6B-multi"]
             config = CodeGenInputConfig
         elif model_name == "codet5p":
             model = CodeT5(JAVA_DIR, BENCH_DIR)
@@ -39,11 +39,11 @@ if __name__ == '__main__':
             config = CodeT5InputConfig
         elif model_name == "starcoder":
             model = StarCoder(JAVA_DIR, BENCH_DIR)
-            checkpoint_names = ["bigcode/starcoderbase-1b", "bigcode/starcoderbase-3b", "bigcode/starcoderbase-7b"]
+            checkpoint_names = ["bigcode/starcoderbase-3b", "bigcode/starcoderbase-7b"]#["bigcode/starcoderbase-1b", "bigcode/starcoderbase-3b", "bigcode/starcoderbase-7b"]
             config = StarCoderInputConfig
         elif model_name == "deepseekcoder":
             model = DeepSeekCoder(JAVA_DIR, BENCH_DIR)
-            checkpoint_names = ["deepseek-ai/deepseek-coder-1.3b-base", "deepseek-ai/deepseek-coder-6.7b-base"]
+            checkpoint_names = ["deepseek-ai/deepseek-coder-6.7b-base"]#["deepseek-ai/deepseek-coder-1.3b-base", "deepseek-ai/deepseek-coder-6.7b-base"]
             config = DeepSeekCoderInputConfig
         elif model_name == "bloom":
             model = Bloom(JAVA_DIR, BENCH_DIR)
