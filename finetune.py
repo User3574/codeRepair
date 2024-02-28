@@ -8,12 +8,13 @@ import torch
 import codecs
 import random
 import click
+import time
 
 from preprocess import preprocess_logits_for_metrics
 from metrics import prepare_compute_metrics
 from transformers import Seq2SeqTrainer, Seq2SeqTrainingArguments, DataCollatorForSeq2Seq, GenerationConfig
 from benchmarks.models import CodeGen
-from benchmarks.collators import seq2seq_collator
+from benchmarks.collators import seq2seq_collator, decoder_collator
 from benchmarks.models import models_classes, training_classes
 from dataset import dataset_classes
 
@@ -26,7 +27,9 @@ from dataset import dataset_classes
 @click.option('--batch_size', default=4, type=int)
 @click.option('--epochs', default=3, type=int)
 @click.option('--max_length', default=768, type=int)
-def train(experiment_name, model_name, dataset_name, checkpoint, batch_size, epochs, max_length):
+@click.option('--max_new_tokens', default=768, type=int)
+@click.option('--training_task', default=None, type=str)
+def train(experiment_name, model_name, dataset_name, checkpoint, batch_size, epochs, max_length, max_new_tokens, training_task):
     # Get Model classes
     model_class = training_classes[model_name]
     tokenizer, model = model_class['tokenizer'], model_class['model']
@@ -41,16 +44,19 @@ def train(experiment_name, model_name, dataset_name, checkpoint, batch_size, epo
     # Handle tokens
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+        tokenizer.pad_token_id = tokenizer.eos_token_id
+        model.config.pad_token = tokenizer.pad_token
+        model.config.pad_token_id = tokenizer.pad_token_id
     print(f'Tokenizer: EOS: {tokenizer.eos_token} ({tokenizer(tokenizer.eos_token, truncation=True, padding=False, return_tensors="pt")}), PAD: {tokenizer.pad_token} ({tokenizer(tokenizer.pad_token, truncation=True, padding=False, return_tensors="pt")})')
 
     # Get Generation Config
-    model.config.max_new_tokens = 512
+    model.config.max_new_tokens = max_new_tokens
 
     # Load dataset
     dataset_class = dataset_classes[dataset_name]
     dataset, train_file, eval_file = dataset_class['dataset'], dataset_class['train_path'], dataset_class['eval_path']
-    train_dataset = dataset(train_file, tokenizer, models_classes[model_name]['model'], max_length=512, shuffle=False, load_range=None)
-    eval_dataset = dataset(eval_file, tokenizer, models_classes[model_name]['model'], max_length=512, load_range=None)
+    train_dataset = dataset(train_file, tokenizer, models_classes[model_name]['model'], max_length=max_length, shuffle=False, load_range=None, training_task=training_task)
+    eval_dataset = dataset(eval_file, tokenizer, models_classes[model_name]['model'], max_length=max_length, load_range=None, training_task=training_task)
 
     # Load metrics
     hf_metrics = {
@@ -71,13 +77,19 @@ def train(experiment_name, model_name, dataset_name, checkpoint, batch_size, epo
     tokenizer.save_pretrained(output_path + "tokenizer/")
     model.save_pretrained(output_path + "checkpoint-0/")
 
+    # Load collators
+    if training_task is "mask":
+        collator = seq2seq_collator
+    else:
+        collator = decoder_collator
+
     # Training settings
     training_args = Seq2SeqTrainingArguments(
         output_dir=output_path,
         do_train=True,
         do_eval=True,
         per_device_train_batch_size=batch_size,
-        per_device_eval_batch_size=batch_size,
+        per_device_eval_batch_size=batch_size*8,
         num_train_epochs=epochs,
         seed=0,
         load_best_model_at_end=True,
@@ -94,21 +106,34 @@ def train(experiment_name, model_name, dataset_name, checkpoint, batch_size, epo
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
-        data_collator=seq2seq_collator,
+        data_collator=collator,
         compute_metrics=compute_metrics,
         #preprocess_logits_for_metrics=preprocess_logits_for_metrics
     )
 
     print(f'Evaluating ({model_name} at {checkpoint})')
     print('Train dataset (Before)')
+    start = time.time()
     results_train = trainer.evaluate(eval_dataset=train_dataset)
+    end = time.time()
+    taken = end - start
+    print(f'Time taken for Evaluating Train dataset: {taken}')
     print(results_train)
+    
     print('Eval dataset (Before)')
+    start = time.time()
     results_val = trainer.evaluate(eval_dataset=eval_dataset)
+    end = time.time()
+    taken = end - start
+    print(f'Time taken for Evaluating Eval dataset: {taken}')
     print(results_val)
 
     print('Training')
+    start = time.time()
     trainer.train()
+    end = time.time()
+    taken = end - start
+    print(f'Time taken for Training: {taken}')
 
     print(f'Evaluating ({model_name} at {checkpoint})')
     print('Train dataset (After)')

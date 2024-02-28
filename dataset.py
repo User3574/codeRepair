@@ -14,7 +14,7 @@ from tqdm import tqdm
 
 
 class CLMDataset(torch.utils.data.Dataset):
-    def __init__(self, file_path, tokenizer, model_class, max_length=768, shuffle=False, load_range=None, include_buggy_line=True):
+    def __init__(self, file_path, tokenizer, model_class, max_length=768, shuffle=False, load_range=None, include_buggy_line=True, training_task="promp"):
         self.data = []
         self.max_length = max_length
 
@@ -24,18 +24,50 @@ class CLMDataset(torch.utils.data.Dataset):
 
             # prepare_input(self, fn_before, fn_bug, fn_fix, fn_after, eos_token)
             inputs, outputs = model_class.prepare_input(l['buggy function before'], l['buggy line'], l['fixed line'], l['buggy function after'], tokenizer.eos_token)
+            
+            if training_task is "prompt":
+                prompt = inputs + '\n' + outputs
+                prompt = tokenizer.encode(inputs, return_tensors='pt')
+                
+                if prompt.shape[1] > max_length:
+                    continue
+                
+                self.data.append({
+                    'input_ids': prompt,
+                    'labels': prompt.clone(),
+                    'attention_mask': torch.ones(prompt.size()).long()
+                })
+   
+            elif training_task is "regressive":
+                print(inputs, outputs)
+                inputs = tokenizer.encode(inputs, return_tensors='pt')
+                outputs = tokenizer.encode(outputs, return_tensors='pt')
+                
+                if inputs.shape[1] > max_length or outputs.shape[1] > max_length:
+                    continue
 
-            inputs = tokenizer.encode(inputs, return_tensors='pt')
-            outputs = tokenizer.encode(outputs, return_tensors='pt')
+                self.data.append({
+                    'input_ids': inputs,
+                    'labels': torch.cat([torch.zeros(1, inputs.size(1) - outputs.size(1)).fill_(-100).long(), outputs], dim=1),
+                    'attention_mask': torch.ones(inputs.size()).long()
+                })
+            
+            elif training_task is "mask":
+                inputs = tokenizer.encode(inputs, return_tensors='pt')
+                outputs = tokenizer.encode(outputs, return_tensors='pt')
+                
+                if inputs.shape[1] > max_length or outputs.shape[1] > max_length:
+                    continue
 
-            if inputs.shape[1] > max_length or outputs.shape[1] > max_length:
-                continue
-
-            self.data.append({
-                'input_ids': inputs,
-                'labels': outputs,
-                'attention_mask': torch.ones(inputs.size()).long()
-            })
+                self.data.append({
+                    'input_ids': inputs,
+                    'labels': outputs,
+                    'attention_mask': torch.ones(inputs.size()).long()
+                })
+                
+            else:
+                print('Training task not specified')
+                raise
 
             if len(self.data) % 10000 == 0:
                 print('finish loading:', len(self.data))
