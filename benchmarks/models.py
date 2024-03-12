@@ -5,7 +5,9 @@ import codecs
 import subprocess
 import time
 import torch
+import numpy as np
 
+from benchmarks.fim import get_fim_token_ids, permute
 from transformers import AutoTokenizer, AutoModelForCausalLM, RobertaTokenizer, T5ForConditionalGeneration, AutoModelForSeq2SeqLM
 
 
@@ -214,25 +216,17 @@ class CodeGen(Model):
             return ''
 
     @staticmethod
-    def prepare_input(fn_before, fn_bug, fn_fix, fn_after, eos_token):
+    def prepare_input(fn_before, fn_bug, fn_fix, fn_after, tokenizer):
         inputs = fn_before
-        if fn_bug is not None:
-            # Replace all lines with buggy line format
-            fn_bug = fn_bug.replace("\n", "\n// buggy line:")
-
-            # Remove last buggy line (For empty line)
-            if fn_bug.endswith('// buggy line:'):
-                fn_bug = fn_bug[:-len(str('// buggy line:'))]
-
-            # If buggy line is not already included
-            if not fn_bug.startswith('\n// buggy line:'):
-                inputs += '// buggy line: '
-
-            # Add buggy part and special token
-            inputs += fn_bug + "\n"
-        #inputs += eos_token
-        outputs = fn_fix + fn_after + eos_token
-        return inputs, outputs
+        inputs += "// bug start: \n" + fn_bug + "// bug end \n"
+        inputs += fn_after + "// fix: \n" + fn_fix + tokenizer.eos_token
+        inputs = tokenizer.encode(inputs, return_tensors='pt')
+        
+        return {
+            'input_ids': inputs,
+            'labels': inputs.clone(),
+            'attention_mask': torch.ones(inputs.size()).long()
+        }
 
 
 CodeT5InputConfig = {
@@ -270,25 +264,20 @@ class CodeT5(Model):
         ])
 
     @staticmethod
-    def prepare_input(fn_before, fn_bug, fn_fix, fn_after, eos_token):
+    def prepare_input(fn_before, fn_bug, fn_fix, fn_after, tokenizer):
         inputs = fn_before
-        if fn_bug is not None:
-            # Replace all lines with buggy line format
-            fn_bug = fn_bug.replace("\n", "\n// buggy line:")
-
-            # Remove last buggy line (For empty line)
-            if fn_bug.endswith('// buggy line:'):
-                fn_bug = fn_bug[:-len(str('// buggy line:'))]
-
-            # If buggy line is not already included
-            if not fn_bug.startswith('\n// buggy line:'):
-                inputs += '// buggy line: '
-
-            # Add buggy part and special token
-            inputs += fn_bug + "<extra_id_0>\n"
+        inputs += "// bug start: \n" + fn_bug + "// bug end \n"
         inputs += fn_after
-        outputs = fn_fix + eos_token
-        return inputs, outputs
+        outputs = fn_fix + tokenizer.eos_token
+        
+        inputs = tokenizer.encode(inputs, return_tensors='pt')
+        outputs = tokenizer.encode(outputs, return_tensors='pt')
+
+        return {
+            'input_ids': inputs,
+            'labels': outputs,
+            'attention_mask': torch.ones(inputs.size()).long()
+        }
 
     def get_input(self, config, output_file, bench_dir):
         if "humaneval" in bench_dir:
@@ -608,25 +597,36 @@ class StarCoder(Model):
         return output.strip()
 
     @staticmethod
-    def prepare_input(fn_before, fn_bug, fn_fix, fn_after, eos_token):
-        inputs = "<fim_prefix>" + fn_before
-        if fn_bug is not None:
-            # Replace all lines with buggy line format
-            fn_bug = fn_bug.replace("\n", "\n// buggy line:")
+    def prepare_input(fn_before, fn_bug, fn_fix, fn_after, tokenizer):
+        (bos_token_id, suffix_tok_id, prefix_tok_id, middle_tok_id, pad_tok_id) = get_fim_token_ids(tokenizer)
+        
+        # Update bug info
+        fn_bug = "// bug start: \n" + fn_bug + "// bug end \n"
 
-            # Remove last buggy line (For empty line)
-            if fn_bug.endswith('// buggy line:'):
-                fn_bug = fn_bug[:-len(str('// buggy line:'))]
+        # Encode
+        prefix = tokenizer.encode(fn_before + fn_bug, add_special_tokens=False)
+        middle = tokenizer.encode(fn_fix, add_special_tokens=False)
+        suffix = tokenizer.encode(fn_after, add_special_tokens=False)
 
-            # If buggy line is not already included
-            if not fn_bug.startswith('\n// buggy line:'):
-                inputs += '// buggy line: '
-
-            # Add buggy part and special token
-            inputs += fn_bug + "<fim_suffix>\n"
-        inputs += fn_after + "<fim_middle>"
-        outputs = fn_fix + eos_token
-        return inputs, outputs
+        # Perform fim permuatation
+        sample = permute(
+            [prefix, middle, suffix],
+            suffix_tok_id,
+            prefix_tok_id,
+            middle_tok_id,
+            pad_tok_id,
+            fim_spm_rate=0.5,
+            truncate_or_pad=False,
+            bos_token_id=bos_token_id,
+        )
+        sample += [tokenizer.eos_token_id]
+        sample = [sample]
+                
+        return {
+          'input_ids': torch.LongTensor(sample), 
+          'labels': torch.LongTensor(sample),
+          'attention_mask': torch.ones_like(torch.LongTensor(sample)).long()
+        }
 
 
 DeepSeekCoderInputConfig = {
@@ -799,9 +799,36 @@ class DeepSeekCoder(Model):
         return output.strip()
 
     @staticmethod
-    def prepare_input(fn_before, fn_bug, fn_fix, fn_after, eos_token):
-        inputs = fn_before + '<FILL_ME>' + fn_after
-        outputs = fn_fix + tokenizer.eos_token
+    def prepare_input(fn_before, fn_bug, fn_fix, fn_after, tokenizer):
+        (bos_token_id, suffix_tok_id, prefix_tok_id, middle_tok_id, pad_tok_id) = get_fim_token_ids(tokenizer)
+        
+        # Update bug info
+        fn_bug = "// bug start: \n" + fn_bug + "// bug end \n"
+
+        # Encode
+        prefix = tokenizer.encode(fn_before + fn_bug, add_special_tokens=False)
+        middle = tokenizer.encode(fn_fix, add_special_tokens=False)
+        suffix = tokenizer.encode(fn_after, add_special_tokens=False)
+
+        # Perform fim permuatation
+        sample = permute(
+            [prefix, middle, suffix],
+            suffix_tok_id,
+            prefix_tok_id,
+            middle_tok_id,
+            pad_tok_id,
+            fim_spm_rate=0.5,
+            truncate_or_pad=False,
+            bos_token_id=bos_token_id,
+        )
+        sample += [tokenizer.eos_token_id]
+        sample = [sample]
+                
+        return {
+          'input_ids': torch.LongTensor(sample), 
+          'labels': torch.LongTensor(sample),
+          'attention_mask': torch.ones_like(torch.LongTensor(sample)).long()
+        }
 
 
 BloomInputConfig = {
@@ -996,9 +1023,17 @@ class Bloom(Model):
             return ''
 
     @staticmethod
-    def prepare_input(fn_before, fn_bug, fn_fix, fn_after, eos_token):
-        inputs = fn_before + '<FILL_ME>' + fn_after
-        outputs = fn_fix + tokenizer.eos_token
+    def prepare_input(fn_before, fn_bug, fn_fix, fn_after, tokenizer):
+        inputs = fn_before
+        inputs += "// bug start: \n" + fn_bug + "// bug end \n"
+        inputs += fn_after + "// fix: \n" + fn_fix + tokenizer.eos_token
+        inputs = tokenizer.encode(inputs, return_tensors='pt')
+        
+        return {
+            'input_ids': inputs,
+            'labels': inputs.clone(),
+            'attention_mask': torch.ones(inputs.size()).long()
+        }
 
 
 CodeLlamaInputConfig = {
@@ -1171,25 +1206,36 @@ class CodeLlama(Model):
         return output.strip()
 
     @staticmethod
-    def prepare_input(fn_before, fn_bug, fn_fix, fn_after, eos_token):
-        inputs = fn_before
-        if fn_bug is not None:
-            # Replace all lines with buggy line format
-            fn_bug = fn_bug.replace("\n", "\n// buggy line:")
+    def prepare_input(fn_before, fn_bug, fn_fix, fn_after, tokenizer):
+        (bos_token_id, suffix_tok_id, prefix_tok_id, middle_tok_id, pad_tok_id) = get_fim_token_ids(tokenizer)
+        
+        # Update bug info
+        fn_bug = "// bug start: \n" + fn_bug + "// bug end \n"
 
-            # Remove last buggy line (For empty line)
-            if fn_bug.endswith('// buggy line:'):
-                fn_bug = fn_bug[:-len(str('// buggy line:'))]
+        # Encode
+        prefix = tokenizer.encode(fn_before + fn_bug, add_special_tokens=False)
+        middle = tokenizer.encode(fn_fix, add_special_tokens=False)
+        suffix = tokenizer.encode(fn_after, add_special_tokens=False)
 
-            # If buggy line is not already included
-            if not fn_bug.startswith('\n// buggy line:'):
-                inputs += '// buggy line: '
-
-            # Add buggy part and special token
-            inputs += fn_bug + "<FILL_ME>\n"
-        inputs += fn_after
-        outputs = fn_fix + "▁<EOT>"
-        return inputs, outputs
+        # Perform fim permuatation
+        sample = permute(
+            [prefix, middle, suffix],
+            suffix_tok_id,
+            prefix_tok_id,
+            middle_tok_id,
+            pad_tok_id,
+            fim_spm_rate=0.5,
+            truncate_or_pad=False,
+            bos_token_id=bos_token_id,
+        )
+        sample += [tokenizer.eos_token_id]
+        sample = [sample]
+                
+        return {
+          'input_ids': torch.LongTensor(sample), 
+          'labels': torch.LongTensor(sample),
+          'attention_mask': torch.ones_like(torch.LongTensor(sample)).long()
+        }
 
 
 # Models dictionary
@@ -1203,9 +1249,9 @@ models_classes['codellama'] = {'model': CodeLlama}
 
 # Training dictionary
 training_classes = {}
-training_classes['codet5p'] = {'tokenizer': AutoTokenizer, 'model': AutoModelForSeq2SeqLM}
-training_classes['codegen'] = {'tokenizer': AutoTokenizer, 'model': AutoModelForCausalLM}
-training_classes['starcoder'] = {'tokenizer': AutoTokenizer, 'model': AutoModelForCausalLM}
-training_classes['deepseekcoder'] = {'tokenizer': AutoTokenizer, 'model': AutoModelForCausalLM}
-training_classes['bloom'] = {'tokenizer': AutoTokenizer, 'model': AutoModelForCausalLM}
-training_classes['codellama'] = {'tokenizer': AutoTokenizer, 'model': AutoModelForCausalLM}
+training_classes['codet5p'] = {'tokenizer': AutoTokenizer, 'model': AutoModelForSeq2SeqLM, 'task': 'mask'}
+training_classes['codegen'] = {'tokenizer': AutoTokenizer, 'model': AutoModelForCausalLM, 'task': 'regressive'}
+training_classes['starcoder'] = {'tokenizer': AutoTokenizer, 'model': AutoModelForCausalLM, 'task': 'fim'}
+training_classes['deepseekcoder'] = {'tokenizer': AutoTokenizer, 'model': AutoModelForCausalLM, 'task': 'fim'}
+training_classes['bloom'] = {'tokenizer': AutoTokenizer, 'model': AutoModelForCausalLM, 'task': 'fim'}
+training_classes['codellama'] = {'tokenizer': AutoTokenizer, 'model': AutoModelForCausalLM, 'task': 'fim'}
