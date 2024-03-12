@@ -18,10 +18,6 @@ def prepare_compute_metrics(tokenizer, hf_metrics):
         decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
         decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
 
-        # Print for Debug
-        print(f'Preds: {preds[0]}, Decoded: {decoded_preds[0]}')
-        print(f'Labels: {labels[0]}, Decoded: {decoded_labels[0]}')
-
         # Compute Metrics
         results = {}
         for metric in hf_metrics:
@@ -29,9 +25,9 @@ def prepare_compute_metrics(tokenizer, hf_metrics):
             loaded_metric = evaluate.load(hf_metrics[metric]["name"])
             results[metric] = loaded_metric.compute(predictions=decoded_preds, references=decoded_labels, **hf_metrics[metric]["kwargs"])
 
-        # Calculate Sentence Accuracy
-        print('Predictions:', decoded_preds[0])
-        print('Labels:', decoded_labels[0])
+        # Print sample
+        print('Predictions:\n', decoded_preds[0])
+        print('Labels:\n', decoded_labels[0])
         return results
 
     return compute_metrics

@@ -6,6 +6,7 @@ import pandas as pd
 import torch
 import codecs
 import random
+import numpy as np
 
 from transformers import AutoTokenizer
 from datasets import load_dataset, Dataset
@@ -14,65 +15,25 @@ from tqdm import tqdm
 
 
 class CLMDataset(torch.utils.data.Dataset):
-    def __init__(self, file_path, tokenizer, model_class, max_length=768, shuffle=False, load_range=None, include_buggy_line=True, training_task="promp"):
+    def __init__(self, file_path, tokenizer, model_class, max_length=768, shuffle=False, load_range=None, include_buggy_line=True):
         self.data = []
         self.max_length = max_length
 
         fp = codecs.open(file_path, 'r', 'utf-8')
+        np_rng = np.random.RandomState(seed=0)
         for l in tqdm(fp.readlines()):
             l = eval(l)
 
             # prepare_input(self, fn_before, fn_bug, fn_fix, fn_after, eos_token)
-            inputs, outputs = model_class.prepare_input(l['buggy function before'], l['buggy line'], l['fixed line'], l['buggy function after'], tokenizer.eos_token)
+            sample = model_class.prepare_input(l['buggy function before'], l['buggy line'], l['fixed line'], l['buggy function after'], tokenizer)
             
-            if training_task is "prompt":
-                prompt = inputs + '\n' + outputs
-                prompt = tokenizer.encode(inputs, return_tensors='pt')
-                
-                if prompt.shape[1] > max_length:
-                    continue
-                
-                self.data.append({
-                    'input_ids': prompt,
-                    'labels': prompt.clone(),
-                    'attention_mask': torch.ones(prompt.size()).long()
-                })
-   
-            elif training_task is "regressive":
-                print(inputs, outputs)
-                inputs = tokenizer.encode(inputs, return_tensors='pt')
-                outputs = tokenizer.encode(outputs, return_tensors='pt')
-                
-                if inputs.shape[1] > max_length or outputs.shape[1] > max_length:
-                    continue
-
-                self.data.append({
-                    'input_ids': inputs,
-                    'labels': torch.cat([torch.zeros(1, inputs.size(1) - outputs.size(1)).fill_(-100).long(), outputs], dim=1),
-                    'attention_mask': torch.ones(inputs.size()).long()
-                })
+            # Sample too long
+            if sample['input_ids'].shape[1] > max_length or sample['labels'].shape[1] > max_length:
+                continue
             
-            elif training_task is "mask":
-                inputs = tokenizer.encode(inputs, return_tensors='pt')
-                outputs = tokenizer.encode(outputs, return_tensors='pt')
-                
-                if inputs.shape[1] > max_length or outputs.shape[1] > max_length:
-                    continue
+            self.data.append(sample)
 
-                self.data.append({
-                    'input_ids': inputs,
-                    'labels': outputs,
-                    'attention_mask': torch.ones(inputs.size()).long()
-                })
-                
-            else:
-                print('Training task not specified')
-                raise
-
-            if len(self.data) % 10000 == 0:
-                print('finish loading:', len(self.data))
-
-            if load_range is not None and len(self.data) == load_range[1]:
+            if load_range is not None and len(self.data) == load_range:
                 break
 
         if shuffle:
@@ -80,8 +41,6 @@ class CLMDataset(torch.utils.data.Dataset):
             random.shuffle(self.data)
 
         print(file_path, 'total size:', len(self.data))
-        if load_range is not None:
-            self.data = self.data[load_range[0]: ]
 
     def __len__(self):
         return len(self.data)
