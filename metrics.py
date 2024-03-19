@@ -8,11 +8,11 @@ def prepare_compute_metrics(tokenizer, hf_metrics):
     def compute_metrics(eval_preds):
         nonlocal tokenizer, hf_metrics
 
-        preds, labels = eval_preds
+        preds, targets = eval_preds
 
         # Remove Collate
-        labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
-        preds = np.where(preds != -100, preds, tokenizer.pad_token_id)
+        labels = np.where(targets != -100, targets, tokenizer.pad_token_id)
+        preds = np.where(targets != -100, preds, tokenizer.pad_token_id)
 
         # Decode
         decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
