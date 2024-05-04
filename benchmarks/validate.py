@@ -8,7 +8,7 @@ from benchmark import HumanEval, QuixBugs, Defects4j
 if __name__ == '__main__':
     model_names = [sys.argv[1]]
     benchmark_name = sys.argv[2]
-    is_finetuned = sys.argv[3]
+    relative_path = sys.argv[3]
 
     result_folder = "/home/machacini/codeRepair/benchmarks/results/" + benchmark_name
     bench_dir = "/home/machacini/codeRepair/benchmarks"
@@ -16,8 +16,7 @@ if __name__ == '__main__':
     for model_name in model_names:
         print(f"Validating Benchmark {benchmark_name}")
         model_outputs = f"{result_folder}/{model_name}/"
-        if is_finetuned == "True":
-            model_outputs += "finetuned/"
+        model_outputs += f"{relative_path}"
         model_outputs = glob.glob(f"{model_outputs}/*output*")
         print("Validating: ", model_outputs)
 

@@ -129,8 +129,12 @@ class HumanEval(Benchmark):
                     patch = CodeT5.output_to_patch(patch, model_output['config'])
                     self.insert_fix(filename, int(start_line), int(end_line), patch)
                 elif 'CODEGEN' in model_output['config']:
-                    patch = CodeGen.output_to_patch(patch, model_output['config'])
-                    self.insert_fix(filename, int(function_start_line), int(function_end_line), patch)
+                    if 'FINETUNED' in model_output['config']:
+                        patch = CodeGen.output_to_patch(patch, model_output['config'])
+                        self.insert_fix(filename, int(start_line), int(end_line), patch)
+                    else:
+                        patch = CodeGen.output_to_patch(patch, model_output['config'])
+                        self.insert_fix(filename, int(function_start_line), int(function_end_line), patch)
                 elif 'STARCODER' in model_output['config']:
                     patch = StarCoder.output_to_patch(patch, model_output['config'])
                     self.insert_fix(filename, int(start_line), int(end_line), patch)
@@ -138,8 +142,12 @@ class HumanEval(Benchmark):
                     patch = DeepSeekCoder.output_to_patch(patch, model_output['config'])
                     self.insert_fix(filename, int(start_line), int(end_line), patch)
                 elif 'BLOOM' in model_output['config']:
-                    patch = Bloom.output_to_patch(patch, model_output['config'])
-                    self.insert_fix(filename, int(function_start_line), int(function_end_line), patch)
+                    if 'FINETUNED' in model_output['config']:
+                        patch = Bloom.output_to_patch(patch, model_output['config'])
+                        self.insert_fix(filename, int(start_line), int(end_line), patch)
+                    else:
+                        patch = Bloom.output_to_patch(patch, model_output['config'])
+                        self.insert_fix(filename, int(function_start_line), int(function_end_line), patch)
                 elif 'CODELLAMA' in model_output['config']:
                     patch = CodeLlama.output_to_patch(patch, model_output['config'])
                     self.insert_fix(filename, int(start_line), int(end_line), patch)
@@ -287,8 +295,12 @@ class QuixBugs(Benchmark):
                     patch = CodeT5.output_to_patch(patch, model_output['config'])
                     self.insert_fix(filename, int(start_line), int(end_line), patch)
                 elif 'CODEGEN' in model_output['config']:
-                    patch = CodeGen.output_to_patch(patch, model_output['config'])
-                    self.insert_fix(filename, int(function_start_line), int(function_end_line), patch)
+                    if 'FINETUNED' in model_output['config']:
+                        patch = CodeGen.output_to_patch(patch, model_output['config'])
+                        self.insert_fix(filename, int(start_line), int(end_line), patch)
+                    else:
+                        patch = CodeGen.output_to_patch(patch, model_output['config'])
+                        self.insert_fix(filename, int(function_start_line), int(function_end_line), patch)
                 elif 'STARCODER' in model_output['config']:
                     patch = StarCoder.output_to_patch(patch, model_output['config'])
                     self.insert_fix(filename, int(start_line), int(end_line), patch)
@@ -296,8 +308,12 @@ class QuixBugs(Benchmark):
                     patch = DeepSeekCoder.output_to_patch(patch, model_output['config'])
                     self.insert_fix(filename, int(start_line), int(end_line), patch)
                 elif 'BLOOM' in model_output['config']:
-                    patch = Bloom.output_to_patch(patch, model_output['config'])
-                    self.insert_fix(filename, int(function_start_line), int(function_end_line), patch)
+                    if 'FINETUNED' in model_output['config']:
+                        patch = Bloom.output_to_patch(patch, model_output['config'])
+                        self.insert_fix(filename, int(start_line), int(end_line), patch)
+                    else:
+                        patch = Bloom.output_to_patch(patch, model_output['config'])
+                        self.insert_fix(filename, int(function_start_line), int(function_end_line), patch)
                 elif 'CODELLAMA' in model_output['config']:
                     patch = CodeLlama.output_to_patch(patch, model_output['config'])
                     self.insert_fix(filename, int(start_line), int(end_line), patch)
@@ -479,8 +495,12 @@ class Defects4j(Benchmark):
                     patch = CodeT5.output_to_patch(patch, model_output['config'])
                     self.insert_fix(filename, int(start_line), int(end_line), patch)
                 elif 'CODEGEN' in model_output['config']:
-                    patch = CodeGen.output_to_patch(patch, model_output['config'])
-                    self.insert_fix(filename, int(function_start_line), int(function_end_line), patch)
+                    if 'FINETUNED' in model_output['config']:
+                        patch = CodeGen.output_to_patch(patch, model_output['config'])
+                        self.insert_fix(filename, int(start_line), int(end_line), patch)
+                    else:
+                        patch = CodeGen.output_to_patch(patch, model_output['config'])
+                        self.insert_fix(filename, int(function_start_line), int(function_end_line), patch)
                 elif 'STARCODER' in model_output['config']:
                     patch = StarCoder.output_to_patch(patch, model_output['config'])
                     self.insert_fix(filename, int(start_line), int(end_line), patch)
@@ -488,8 +508,12 @@ class Defects4j(Benchmark):
                     patch = DeepSeekCoder.output_to_patch(patch, model_output['config'])
                     self.insert_fix(filename, int(start_line), int(end_line), patch)
                 elif 'BLOOM' in model_output['config']:
-                    patch = Bloom.output_to_patch(patch, model_output['config'])
-                    self.insert_fix(filename, int(function_start_line), int(function_end_line), patch)
+                    if 'FINETUNED' in model_output['config']:
+                        patch = Bloom.output_to_patch(patch, model_output['config'])
+                        self.insert_fix(filename, int(start_line), int(end_line), patch)
+                    else:
+                        patch = Bloom.output_to_patch(patch, model_output['config'])
+                        self.insert_fix(filename, int(function_start_line), int(function_end_line), patch)
                 elif 'CODELLAMA' in model_output['config']:
                     patch = CodeLlama.output_to_patch(patch, model_output['config'])
                     self.insert_fix(filename, int(start_line), int(end_line), patch)

@@ -7,7 +7,14 @@ import time
 import torch
 import numpy as np
 
-from benchmarks.fim import get_fim_token_ids, permute
+try:
+    from fim import get_fim_token_ids, permute
+except:
+    pass
+try:
+    from benchmarks.fim import get_fim_token_ids, permute
+except:
+    pass
 from transformers import AutoTokenizer, AutoModelForCausalLM, RobertaTokenizer, T5ForConditionalGeneration, AutoModelForSeq2SeqLM
 
 
@@ -34,10 +41,11 @@ CodeGenInputConfig = {
 
 
 class CodeGen(Model):
-    def __init__(self, JAVA_DIR, BENCH_DIR):
+    def __init__(self, JAVA_DIR, BENCH_DIR, IS_FINETUNED = False):
         super().__init__()
         self.JAVA_DIR = JAVA_DIR
         self.BENCH_DIR = BENCH_DIR
+        self.IS_FINETUNED = IS_FINETUNED
 
     def command(self, cmd):
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -157,7 +165,17 @@ class CodeGen(Model):
     def create_output(self, input_file, output_file, tokenizer_dir, model_dir, model_name, max_new_tokens, num_output=10):
         tokenizer = AutoTokenizer.from_pretrained(tokenizer_dir)
         model = AutoModelForCausalLM.from_pretrained(model_dir, trust_remote_code=True).to("cuda")
-        # model = model.to(device_ids[0])
+        
+        # Try to load PEFT
+        try:
+            model = PeftModel.from_pretrained(
+                model,
+                model_dir
+            )
+            model = model.merge_and_unload()
+            print('PEFT model loaded successfully')
+        except:
+            print('Model loaded')
 
         codegen_output = json.load(open(input_file, 'r'))
         codegen_output['model'] = model_name
@@ -168,18 +186,23 @@ class CodeGen(Model):
 
             try:
                 input_ids = tokenizer(text, return_tensors="pt").input_ids.to("cuda")
-                if input_ids.size(1) >= int(tokenizer.model_max_length):
+                if input_ids.size(1) >= 768:
                     print('input too long:', input_ids.size(1), 'skip')
                     continue
 
                 eos_id = tokenizer.convert_tokens_to_ids(tokenizer.eos_token)
                 generated_ids = model.generate(
-                    input_ids, max_new_tokens=max_new_tokens, num_beams=num_output, num_return_sequences=num_output,
+                    input_ids, max_new_tokens=max_new_tokens, num_beams=num_output, num_return_sequences=num_output, early_stopping=True,
                     pad_token_id=eos_id, eos_token_id=eos_id
                 )
                 output = []
-                for generated_id in generated_ids:
-                    output.append(tokenizer.decode(generated_id, skip_special_tokens=True))
+                if self.IS_FINETUNED is not None:
+                    for generated_id in generated_ids:
+                        o = tokenizer.decode(generated_id[input_ids.size(1):], skip_special_tokens=True)
+                        output.append(o)
+                else:
+                    for generated_id in generated_ids:
+                        output.append(tokenizer.decode(generated_id, skip_special_tokens=True))
             except Exception as e:
                 print(f"Can't load the model, unexpected exception occured: {e}")
                 output = []
@@ -194,37 +217,43 @@ class CodeGen(Model):
         """
         find the } that matches the first { in the output
         """
-        output = output.strip().split('\n')
-        no_comment_output = [line for line in output if not line.strip().startswith('//')]
-        output = '\n'.join(no_comment_output)
-        stack = ['{']
-        try:
-            start_index = output.index('{')
-            patch = output[: start_index + 1]
-            for c in output[start_index + 1:]:
-                patch += c
-                if c == '}':
-                    top = stack.pop()
-                    if top != '{':
-                        return ''
-                    if len(stack) == 0:
-                        return patch.strip()
-                elif c == '{':
-                    stack.append(c)
-            return ''
-        except Exception as e:
-            return ''
+        if 'FINETUNED' in config:
+            return output.strip()
+        else:
+            output = output.strip().split('\n')
+            no_comment_output = [line for line in output if not line.strip().startswith('//')]
+            output = '\n'.join(no_comment_output)
+            stack = ['{']
+            try:
+                start_index = output.index('{')
+                patch = output[: start_index + 1]
+                for c in output[start_index + 1:]:
+                    patch += c
+                    if c == '}':
+                        top = stack.pop()
+                        if top != '{':
+                            return ''
+                        if len(stack) == 0:
+                            return patch.strip()
+                    elif c == '{':
+                        stack.append(c)
+                return ''
+            except Exception as e:
+                return ''
 
     @staticmethod
     def prepare_input(fn_before, fn_bug, fn_fix, fn_after, tokenizer):
         inputs = fn_before
         inputs += "// bug start: \n" + fn_bug + "// bug end \n"
         inputs += fn_after + "// fix: \n" + fn_fix + tokenizer.eos_token
+        outputs = fn_fix + tokenizer.eos_token
+
         inputs = tokenizer.encode(inputs, return_tensors='pt')
-        
+        outputs = tokenizer.encode(outputs, return_tensors='pt')
+
         return {
             'input_ids': inputs,
-            'labels': inputs.clone(),
+            'labels': torch.cat([torch.zeros(1, inputs.size(1) - outputs.size(1)).fill_(-100).long(), outputs], dim=1),
             'attention_mask': torch.ones(inputs.size()).long()
         }
 
@@ -243,10 +272,11 @@ CodeT5InputConfig = {
 }
 
 class CodeT5(Model):
-    def __init__(self, JAVA_DIR, BENCH_DIR):
+    def __init__(self, JAVA_DIR, BENCH_DIR, IS_FINETUNED = False):
         super().__init__()
         self.JAVA_DIR = JAVA_DIR
         self.BENCH_DIR = BENCH_DIR
+        self.IS_FINETUNED = IS_FINETUNED
 
     def command(self, cmd):
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -382,6 +412,18 @@ class CodeT5(Model):
     def create_output(self, input_file, output_file, tokenizer_dir, model_dir, model_name, max_new_tokens, num_output=10):
         tokenizer = AutoTokenizer.from_pretrained(tokenizer_dir, trust_remote_code=True)
         model = AutoModelForSeq2SeqLM.from_pretrained(model_dir, trust_remote_code=True).to("cuda")
+        
+        # Try to load PEFT
+        try:
+            model = PeftModel.from_pretrained(
+                model,
+                model_dir
+            )
+            model = model.merge_and_unload()
+            print('PEFT model loaded successfully')
+        except:
+            print('Model loaded')
+        
         codet5_output = json.load(open(input_file, 'r'))
         codet5_output['model'] = model_name
         start_time = time.time()
@@ -390,27 +432,18 @@ class CodeT5(Model):
             print(i + 1, 'generating', filename)
 
             try:
-                inputs = tokenizer(text, return_tensors="pt").to("cuda")
+                input_ids = tokenizer(text, return_tensors="pt").input_ids.to("cuda")
+                eos_id = tokenizer.convert_tokens_to_ids(tokenizer.eos_token)
                 # https://huggingface.co/Salesforce/codet5p-220m/blob/main/tokenizer_config.json
-                if inputs['input_ids'].size(1) >= 512:
-                    print('input too long:', inputs['input_ids'].size(1), 'skip')
+                if input_ids.size(1) >= 512:
+                    print('input too long:', input_ids.size(1), 'skip')
                     continue
 
-                # https://github.com/salesforce/CodeT5/tree/main/CodeT5%2B
-                if "codet5p" in model_dir:
-                    inputs['decoder_input_ids'] = inputs['input_ids'].clone()
-                generated_ids = model.generate(**inputs, max_new_tokens=max_new_tokens, num_beams=num_output, num_return_sequences=num_output, early_stopping=True)
+                generated_ids = model.generate(input_ids, max_new_tokens=max_new_tokens, num_beams=num_output, num_return_sequences=num_output, early_stopping=True, pad_token_id=eos_id, eos_token_id=eos_id)
                 output = []
                 for generated_id in generated_ids:
-                    if "codet5p" in model_dir:
-                        generated_tokens = tokenizer.decode(generated_id, skip_special_tokens=False)
-                        start_idx = generated_tokens.find("<extra_id_0>")
-                        end_idx = generated_tokens.find("<extra_id_1>")
-                        generated_tokens = generated_tokens[start_idx:end_idx] if end_idx > 0 else generated_tokens[start_idx:]
-                        generated_tokens = generated_tokens.replace("<extra_id_0>", "")
-                        output.append(generated_tokens)
-                    else:
-                        output.append(tokenizer.decode(generated_id, skip_special_tokens=True))
+                    generated_tokens = tokenizer.decode(generated_id, skip_special_tokens=True)
+                    output.append(generated_tokens)
             except Exception as e:
                 print(f"Can't load the model, unexpected exception occured: {e}")
                 output = []
@@ -439,10 +472,11 @@ StarCoderInputConfig = {
 }
 
 class StarCoder(Model):
-    def __init__(self, JAVA_DIR, BENCH_DIR):
+    def __init__(self, JAVA_DIR, BENCH_DIR, IS_FINETUNED = False):
         super().__init__()
         self.JAVA_DIR = JAVA_DIR
         self.BENCH_DIR = BENCH_DIR
+        self.IS_FINETUNED = IS_FINETUNED
 
     def command(self, cmd):
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -561,6 +595,18 @@ class StarCoder(Model):
     def create_output(self, input_file, output_file, tokenizer_dir, model_dir, model_name, max_new_tokens, num_output=10):
         tokenizer = AutoTokenizer.from_pretrained(tokenizer_dir, token=access_token)
         model = AutoModelForCausalLM.from_pretrained(model_dir, trust_remote_code=True, token=access_token).to("cuda")
+        
+        # Try to load PEFT
+        try:
+            model = PeftModel.from_pretrained(
+                model,
+                model_dir
+            )
+            model = model.merge_and_unload()
+            print('PEFT model loaded successfully')
+        except:
+            print('Model loaded')
+        
         starcoder_output = json.load(open(input_file, 'r'))
         starcoder_output['model'] = model_name
         start_time = time.time()
@@ -609,7 +655,7 @@ class StarCoder(Model):
         suffix = tokenizer.encode(fn_after, add_special_tokens=False)
 
         # Perform fim permuatation
-        sample = permute(
+        inputs = permute(
             [prefix, middle, suffix],
             suffix_tok_id,
             prefix_tok_id,
@@ -619,13 +665,21 @@ class StarCoder(Model):
             truncate_or_pad=False,
             bos_token_id=bos_token_id,
         )
-        sample += [tokenizer.eos_token_id]
-        sample = [sample]
-                
+        inputs += [tokenizer.eos_token_id]
+        inputs = [inputs]
+        
+        # Add EOS
+        outputs = list(np.concatenate([middle, [tokenizer.eos_token_id]]))
+        outputs = [outputs]
+
+        # Convert to tensors
+        inputs = torch.LongTensor(inputs)
+        outputs = torch.LongTensor(outputs)
+        
         return {
-          'input_ids': torch.LongTensor(sample), 
-          'labels': torch.LongTensor(sample),
-          'attention_mask': torch.ones_like(torch.LongTensor(sample)).long()
+            'input_ids': inputs,
+            'labels': torch.cat([torch.zeros(1, inputs.size(1) - outputs.size(1)).fill_(-100).long(), outputs], dim=1),
+            'attention_mask': torch.ones(inputs.size()).long()
         }
 
 
@@ -643,10 +697,11 @@ DeepSeekCoderInputConfig = {
 }
 
 class DeepSeekCoder(Model):
-    def __init__(self, JAVA_DIR, BENCH_DIR):
+    def __init__(self, JAVA_DIR, BENCH_DIR, IS_FINETUNED = False):
         super().__init__()
         self.JAVA_DIR = JAVA_DIR
         self.BENCH_DIR = BENCH_DIR
+        self.IS_FINETUNED = IS_FINETUNED
 
     def command(self, cmd):
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -765,6 +820,18 @@ class DeepSeekCoder(Model):
     def create_output(self, input_file, output_file, tokenizer_dir, model_dir, model_name, max_new_tokens, num_output=10):
         tokenizer = AutoTokenizer.from_pretrained(tokenizer_dir)
         model = AutoModelForCausalLM.from_pretrained(model_dir, trust_remote_code=True).to("cuda")
+        
+        # Try to load PEFT
+        try:
+            model = PeftModel.from_pretrained(
+                model,
+                model_dir
+            )
+            model = model.merge_and_unload()
+            print('PEFT model loaded successfully')
+        except:
+            print('Model loaded')
+        
         deepseekcoder_output = json.load(open(input_file, 'r'))
         deepseekcoder_output['model'] = model_name
         start_time = time.time()
@@ -811,7 +878,7 @@ class DeepSeekCoder(Model):
         suffix = tokenizer.encode(fn_after, add_special_tokens=False)
 
         # Perform fim permuatation
-        sample = permute(
+        inputs = permute(
             [prefix, middle, suffix],
             suffix_tok_id,
             prefix_tok_id,
@@ -821,13 +888,21 @@ class DeepSeekCoder(Model):
             truncate_or_pad=False,
             bos_token_id=bos_token_id,
         )
-        sample += [tokenizer.eos_token_id]
-        sample = [sample]
-                
+        inputs += [tokenizer.eos_token_id]
+        inputs = [inputs]
+        
+        # Add EOS
+        outputs = list(np.concatenate([middle, [tokenizer.eos_token_id]]))
+        outputs = [outputs]
+
+        # Convert to tensors
+        inputs = torch.LongTensor(inputs)
+        outputs = torch.LongTensor(outputs)
+        
         return {
-          'input_ids': torch.LongTensor(sample), 
-          'labels': torch.LongTensor(sample),
-          'attention_mask': torch.ones_like(torch.LongTensor(sample)).long()
+            'input_ids': inputs,
+            'labels': torch.cat([torch.zeros(1, inputs.size(1) - outputs.size(1)).fill_(-100).long(), outputs], dim=1),
+            'attention_mask': torch.ones(inputs.size()).long()
         }
 
 
@@ -845,10 +920,11 @@ BloomInputConfig = {
 }
 
 class Bloom(Model):
-    def __init__(self, JAVA_DIR, BENCH_DIR):
+    def __init__(self, JAVA_DIR, BENCH_DIR, IS_FINETUNED=False):
         super().__init__()
         self.JAVA_DIR = JAVA_DIR
         self.BENCH_DIR = BENCH_DIR
+        self.IS_FINETUNED = IS_FINETUNED
 
     def command(self, cmd):
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -967,6 +1043,18 @@ class Bloom(Model):
     def create_output(self, input_file, output_file, tokenizer_dir, model_dir, model_name, max_new_tokens, num_output=10):
         tokenizer = AutoTokenizer.from_pretrained(tokenizer_dir)
         model = AutoModelForCausalLM.from_pretrained(model_dir, trust_remote_code=True).to("cuda")
+        
+        # Try to load PEFT
+        try:
+            model = PeftModel.from_pretrained(
+                model,
+                model_dir
+            )
+            model = model.merge_and_unload()
+            print('PEFT model loaded successfully')
+        except:
+            print('Model loaded')
+        
         bloom_output = json.load(open(input_file, 'r'))
         bloom_output['model'] = model_name
         start_time = time.time()
@@ -985,7 +1073,11 @@ class Bloom(Model):
                 generated_ids = model.generate(**inputs, max_new_tokens=max_new_tokens, num_beams=num_output, num_return_sequences=num_output,
                                             early_stopping=True, eos_token_id=eos_id)
                 output = []
-                for generated_id in generated_ids:
+                if self.IS_FINETUNED is not None:
+                    for generated_id in generated_ids:
+                        o = tokenizer.decode(generated_id[inputs["input_ids"].size(1):], truncate_before_pattern=[r"\n\n^#", "^'", "\n\n\n"], skip_special_tokens=True)
+                        output.append(o)
+                else:
                     output.append(tokenizer.decode(generated_id, truncate_before_pattern=[r"\n\n^#", "^'", "\n\n\n"], skip_special_tokens=True))
             except Exception as e:
                 print(f"Can't load the model, unexpected exception occured: {e}")
@@ -1001,37 +1093,43 @@ class Bloom(Model):
         """
         find the } that matches the first { in the output
         """
-        output = output.strip().split('\n')
-        no_comment_output = [line for line in output if not line.strip().startswith('//')]
-        output = '\n'.join(no_comment_output)
-        stack = ['{']
-        try:
-            start_index = output.index('{')
-            patch = output[: start_index + 1]
-            for c in output[start_index + 1:]:
-                patch += c
-                if c == '}':
-                    top = stack.pop()
-                    if top != '{':
-                        return ''
-                    if len(stack) == 0:
-                        return patch.strip()
-                elif c == '{':
-                    stack.append(c)
-            return ''
-        except Exception as e:
-            return ''
+        if 'FINETUNED' in config:
+            return output.strip()
+        else:
+            output = output.strip().split('\n')
+            no_comment_output = [line for line in output if not line.strip().startswith('//')]
+            output = '\n'.join(no_comment_output)
+            stack = ['{']
+            try:
+                start_index = output.index('{')
+                patch = output[: start_index + 1]
+                for c in output[start_index + 1:]:
+                    patch += c
+                    if c == '}':
+                        top = stack.pop()
+                        if top != '{':
+                            return ''
+                        if len(stack) == 0:
+                            return patch.strip()
+                    elif c == '{':
+                        stack.append(c)
+                return ''
+            except Exception as e:
+                return ''
 
     @staticmethod
     def prepare_input(fn_before, fn_bug, fn_fix, fn_after, tokenizer):
         inputs = fn_before
         inputs += "// bug start: \n" + fn_bug + "// bug end \n"
         inputs += fn_after + "// fix: \n" + fn_fix + tokenizer.eos_token
+        outputs = fn_fix + tokenizer.eos_token
+
         inputs = tokenizer.encode(inputs, return_tensors='pt')
-        
+        outputs = tokenizer.encode(outputs, return_tensors='pt')
+
         return {
             'input_ids': inputs,
-            'labels': inputs.clone(),
+            'labels': torch.cat([torch.zeros(1, inputs.size(1) - outputs.size(1)).fill_(-100).long(), outputs], dim=1),
             'attention_mask': torch.ones(inputs.size()).long()
         }
 
@@ -1050,10 +1148,11 @@ CodeLlamaInputConfig = {
 }
 
 class CodeLlama(Model):
-    def __init__(self, JAVA_DIR, BENCH_DIR):
+    def __init__(self, JAVA_DIR, BENCH_DIR, IS_FINETUNED=False):
         super().__init__()
         self.JAVA_DIR = JAVA_DIR
         self.BENCH_DIR = BENCH_DIR
+        self.IS_FINETUNED = IS_FINETUNED
 
     def command(self, cmd):
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -1172,6 +1271,18 @@ class CodeLlama(Model):
     def create_output(self, input_file, output_file, tokenizer_dir, model_dir, model_name, max_new_tokens, num_output=10):
         tokenizer = AutoTokenizer.from_pretrained(tokenizer_dir)
         model = AutoModelForCausalLM.from_pretrained(model_dir, trust_remote_code=True).to("cuda")
+        
+        # Try to load PEFT
+        try:
+            model = PeftModel.from_pretrained(
+                model,
+                model_dir
+            )
+            model = model.merge_and_unload()
+            print('PEFT model loaded successfully')
+        except:
+            print('Model loaded')
+        
         codellama_output = json.load(open(input_file, 'r'))
         codellama_output['model'] = model_name
         start_time = time.time()
@@ -1218,7 +1329,7 @@ class CodeLlama(Model):
         suffix = tokenizer.encode(fn_after, add_special_tokens=False)
 
         # Perform fim permuatation
-        sample = permute(
+        inputs = permute(
             [prefix, middle, suffix],
             suffix_tok_id,
             prefix_tok_id,
@@ -1228,13 +1339,21 @@ class CodeLlama(Model):
             truncate_or_pad=False,
             bos_token_id=bos_token_id,
         )
-        sample += [tokenizer.eos_token_id]
-        sample = [sample]
-                
+        inputs += [tokenizer.eos_token_id]
+        inputs = [inputs]
+        
+        # Add EOS
+        outputs = list(np.concatenate([middle, [tokenizer.eos_token_id]]))
+        outputs = [outputs]
+
+        # Convert to tensors
+        inputs = torch.LongTensor(inputs)
+        outputs = torch.LongTensor(outputs)
+        
         return {
-          'input_ids': torch.LongTensor(sample), 
-          'labels': torch.LongTensor(sample),
-          'attention_mask': torch.ones_like(torch.LongTensor(sample)).long()
+            'input_ids': inputs,
+            'labels': torch.cat([torch.zeros(1, inputs.size(1) - outputs.size(1)).fill_(-100).long(), outputs], dim=1),
+            'attention_mask': torch.ones(inputs.size()).long()
         }
 
 
