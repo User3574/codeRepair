@@ -17,6 +17,7 @@ from benchmarks.models import CodeGen
 from benchmarks.collators import seq2seq_collator, decoder_collator
 from benchmarks.models import models_classes, training_classes
 from dataset import dataset_classes
+from peft import LoraConfig, IA3Config, TaskType, get_peft_model
 
 
 @click.command()
@@ -52,6 +53,30 @@ def train(experiment_name, model_name, dataset_name, checkpoint, batch_size_trai
     # Get Generation Config
     model.config.max_new_tokens = max_new_tokens
 
+    # Task type
+    if task == "mask":
+        task_type = TaskType.SEQ_2_SEQ_LM
+    else:
+        task_type = TaskType.CAUSAL_LM
+    
+    # https://github.com/huggingface/peft/blob/main/src/peft/utils/constants.py
+    if model_name == "codegen":
+        target_modules = ["qkv_proj"]
+        # Load proper adapter
+        peft_config = IA3Config(
+            task_type=task_type,
+            inference_mode=False,
+            target_modules=target_modules,
+            feedforward_modules=[]
+        )
+    else:
+        # Load proper adapter
+        peft_config = IA3Config(
+            task_type=task_type,
+            inference_mode=False
+        )
+    model = get_peft_model(model, peft_config)
+
     # Load dataset
     dataset_class = dataset_classes[dataset_name]
     dataset, train_file, eval_file = dataset_class['dataset'], dataset_class['train_path'], dataset_class['eval_path']
@@ -67,7 +92,7 @@ def train(experiment_name, model_name, dataset_name, checkpoint, batch_size_trai
     # Set output path
     output_path = checkpoint
     output_path.replace("/", "-")
-    output_path = f"models/{dataset_name}/{model_name}/{output_path}/"
+    output_path = f"models/ia3/{dataset_name}/{model_name}/{output_path}/"
 
     # Save tokenizer and initial model
     tokenizer.save_pretrained(output_path + "tokenizer/")
@@ -77,7 +102,7 @@ def train(experiment_name, model_name, dataset_name, checkpoint, batch_size_trai
     if task == "mask":
         collator = seq2seq_collator
         compute_metrics = prepare_compute_metrics(tokenizer, hf_metrics, False)
-            
+        
         # Training settings
         training_args = Seq2SeqTrainingArguments(
             output_dir=output_path,
@@ -120,7 +145,7 @@ def train(experiment_name, model_name, dataset_name, checkpoint, batch_size_trai
             seed=0,
             load_best_model_at_end=True,
             report_to="wandb",
-            run_name=f"{dataset_name}_{checkpoint}",
+            run_name=f"ia3_{dataset_name}_{checkpoint}",
             save_strategy='epoch',
             evaluation_strategy='epoch',
             logging_strategy='epoch'
@@ -170,3 +195,4 @@ def train(experiment_name, model_name, dataset_name, checkpoint, batch_size_trai
 
 if __name__ == '__main__':
     train()
+

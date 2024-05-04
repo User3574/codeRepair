@@ -17,19 +17,23 @@ from benchmarks.models import CodeGen
 from benchmarks.collators import seq2seq_collator, decoder_collator
 from benchmarks.models import models_classes, training_classes
 from dataset import dataset_classes
+from peft import LoraConfig, IA3Config, TaskType, get_peft_model
 
 
 @click.command()
 @click.option('--experiment_name', default='Finetuning_CLM', type=str)
 @click.option('--model_name', default='codet5p', type=str)
 @click.option('--dataset_name', default='clm', type=str)
+@click.option('--adapter_name', type=str)
 @click.option('--checkpoint', default='Salesforce/codet5-small', type=str)
 @click.option('--batch_size_train', default=4, type=int)
 @click.option('--batch_size_test', default=4, type=int)
 @click.option('--epochs', default=3, type=int)
 @click.option('--max_length', default=768, type=int)
 @click.option('--max_new_tokens', default=768, type=int)
-def train(experiment_name, model_name, dataset_name, checkpoint, batch_size_train, batch_size_test, epochs, max_length, max_new_tokens):
+@click.option('--rank', default=8, type=int)
+@click.option('--scaling', default=8, type=int)
+def train(experiment_name, model_name, dataset_name, adapter_name, checkpoint, batch_size_train, batch_size_test, epochs, max_length, max_new_tokens, rank, scaling):
     # Get Model classes
     model_class = training_classes[model_name]
     tokenizer, model, task = model_class['tokenizer'], model_class['model'], model_class['task']
@@ -52,6 +56,15 @@ def train(experiment_name, model_name, dataset_name, checkpoint, batch_size_trai
     # Get Generation Config
     model.config.max_new_tokens = max_new_tokens
 
+    # Load LORA adapter
+    peft_config = LoraConfig(
+        r=rank,
+        lora_alpha=scaling,
+        lora_dropout=0.05,
+        task_type=TaskType.CAUSAL_LM,
+    )
+    model = get_peft_model(model, peft_config)
+
     # Load dataset
     dataset_class = dataset_classes[dataset_name]
     dataset, train_file, eval_file = dataset_class['dataset'], dataset_class['train_path'], dataset_class['eval_path']
@@ -67,7 +80,7 @@ def train(experiment_name, model_name, dataset_name, checkpoint, batch_size_trai
     # Set output path
     output_path = checkpoint
     output_path.replace("/", "-")
-    output_path = f"models/{dataset_name}/{model_name}/{output_path}/"
+    output_path = f"models/{adapter_name}/{dataset_name}/{model_name}/{output_path}_{rank}_{scaling}/"
 
     # Save tokenizer and initial model
     tokenizer.save_pretrained(output_path + "tokenizer/")
@@ -77,7 +90,7 @@ def train(experiment_name, model_name, dataset_name, checkpoint, batch_size_trai
     if task == "mask":
         collator = seq2seq_collator
         compute_metrics = prepare_compute_metrics(tokenizer, hf_metrics, False)
-            
+        
         # Training settings
         training_args = Seq2SeqTrainingArguments(
             output_dir=output_path,
@@ -90,7 +103,7 @@ def train(experiment_name, model_name, dataset_name, checkpoint, batch_size_trai
             load_best_model_at_end=True,
             predict_with_generate=True,
             report_to="wandb",
-            run_name=f"{dataset_name}_{checkpoint}",
+            run_name=f"{dataset_name}_{checkpoint}_{rank}_{scaling}",
             save_strategy='epoch',
             evaluation_strategy='epoch',
             logging_strategy='epoch'
@@ -108,7 +121,7 @@ def train(experiment_name, model_name, dataset_name, checkpoint, batch_size_trai
     else:
         collator = decoder_collator(tokenizer.pad_token_id)
         compute_metrics = prepare_compute_metrics(tokenizer, hf_metrics, True)
-        
+
         # Training settings
         training_args = TrainingArguments(
             output_dir=output_path,
@@ -170,3 +183,4 @@ def train(experiment_name, model_name, dataset_name, checkpoint, batch_size_trai
 
 if __name__ == '__main__':
     train()
+

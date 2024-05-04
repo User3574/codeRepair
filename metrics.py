@@ -4,12 +4,16 @@ import evaluate
 from sklearn.metrics import accuracy_score, recall_score, precision_score, f1_score
 
 
-def prepare_compute_metrics(tokenizer, hf_metrics):
+def prepare_compute_metrics(tokenizer, hf_metrics, is_shifted):
     def compute_metrics(eval_preds):
-        nonlocal tokenizer, hf_metrics
+        nonlocal tokenizer, hf_metrics, is_shifted
 
         preds, targets = eval_preds
 
+        # Shift labels to the left
+        if is_shifted == True:
+            targets = np.roll(targets, -1)
+        
         # Remove Collate
         labels = np.where(targets != -100, targets, tokenizer.pad_token_id)
         preds = np.where(targets != -100, preds, tokenizer.pad_token_id)
