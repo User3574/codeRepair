@@ -1,7 +1,5 @@
-# Code for Master thesis: Automated Program Repair using LLMs
-This repo contains code for the Master thesis done at Simula and UiO and is based 
-on the work done by Jiang et al. [paper](https://arxiv.org/pdf/2302.05020) and their 
-codebase [codebase](https://github.com/lin-tan/clm/tree/main).
+# Code for Fine-tuning Language models for Program Repair: An Empirical Study
+This repo contains code for the work done at Simula and UiO focused on fine-tuning LLMs using standard full fine-tuning approach along with parameter-efficient fine-tuning (PEFT) techniques which are then compared on several benchmarks. Work is based on the paper and repo by Jiang et al. [paper](https://arxiv.org/pdf/2302.05020), [codebase](https://github.com/lin-tan/clm/tree/main).
 
 ## Requirements
 There are various requirements in order to run this project. 
