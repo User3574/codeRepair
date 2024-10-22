@@ -1,0 +1,9 @@
+package clm.bloom;
+
+public enum BloomConfig {
+    
+    BLOOM_COMPLETE_CODEFORM_NOCOMMENT,
+
+    BLOOM_COMPLETE_CODEFORM_COMMENTFORM_NOCOMMENT,
+
+}

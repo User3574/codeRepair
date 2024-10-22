@@ -1,0 +1,9 @@
+package clm.codellama;
+
+public enum CodeLlamaConfig {
+
+    CODELLAMA_COMPLETE_CODEFORM_NOCOMMENT,
+
+    CODELLAMA_COMPLETE_CODEFORM_COMMENTFORM_NOCOMMENT,
+
+}
